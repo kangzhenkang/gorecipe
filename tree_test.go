@@ -24,12 +24,6 @@ func TestTreeCache(t *testing.T) {
 	testServer, evt, conn := getConnFromTestCluster(t)
 	defer testServer.Stop()
 	defer conn.Close()
-	for {
-		e := <-evt
-		if e.State == zk.StateConnected {
-			break
-		}
-	}
 
 	tc := NewTreeCache(conn, evt, "/")
 	che := make(chan *TreeEvent, 100)

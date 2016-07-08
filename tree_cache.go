@@ -47,6 +47,7 @@ func NewTreeCache(conn *zk.Conn, evt <-chan zk.Event, path string) *TreeCache {
 		evt:         evt,
 		client:      conn,
 	}
+
 	tc.root = NewTreeNode(tc, nil, path, 0)
 	tc.initialized.Store(false)
 	return tc
@@ -57,6 +58,15 @@ func NewTreeCache(conn *zk.Conn, evt <-chan zk.Event, path string) *TreeCache {
 // After a cache started, all changes of subtree will be synchronized
 // from the ZooKeeper server. Events will be fired for those activity.
 func (tc *TreeCache) Start() {
+	if tc.client.State() != zk.StateConnected {
+		for {
+			e := <-tc.evt
+			if e.State == zk.StateConnected {
+				break
+			}
+		}
+	}
+
 	tc.mu.Lock()
 	if tc.state != CacheLatent {
 		tc.mu.Unlock()
