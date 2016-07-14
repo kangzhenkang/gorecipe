@@ -9,7 +9,10 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 )
 
+// TreeEventType TreeEvent type.
 type TreeEventType int
+
+// TreeNodeState tree node state.
 type TreeNodeState int
 
 const (
@@ -30,8 +33,11 @@ const (
 	// Initialized posted after the initial cache has been fully populated.
 	Initialized
 
+	// TreeNodePending the state of TreeNode that just created.
 	TreeNodePending TreeNodeState = iota + 1
+	// TreeNodeLive the state of TreeNode that alread watched.
 	TreeNodeLive
+	// TreeNodeDead the state of TreeNode that removed.
 	TreeNodeDead
 )
 
@@ -62,6 +68,7 @@ func (tns TreeNodeState) String() string {
 	return treeNodeStateString[tns]
 }
 
+// TreeNode node for cache zookeeper path.
 type TreeNode struct {
 	tree     *TreeCache
 	path     string
@@ -76,6 +83,7 @@ type TreeNode struct {
 	mu       *sync.RWMutex
 }
 
+// NewTreeNode reutrn the a TreeNode.
 func NewTreeNode(tree *TreeCache, parent *TreeNode, path string, depth int) *TreeNode {
 	tn := &TreeNode{
 		tree:     tree,
@@ -190,42 +198,42 @@ func (tn *TreeNode) processResult() {
 		result := <-tn.result
 		if result.err != nil {
 			// TODO handle error or log it.
-			continue
-		}
-		switch result.methodType {
-		case methodExists:
-		case methodGetChildren:
-			for _, child := range result.children {
-				if !tn.haveChild(child) {
-					fullPath := path.Join(tn.path, child)
-					node := NewTreeNode(tn.tree, tn, fullPath, tn.depth+1)
-					tn.addChild(child, node)
-					node.wasCreated()
+		} else {
+			switch result.methodType {
+			case methodExists:
+			case methodGetChildren:
+				for _, child := range result.children {
+					if !tn.haveChild(child) {
+						fullPath := path.Join(tn.path, child)
+						node := NewTreeNode(tn.tree, tn, fullPath, tn.depth+1)
+						tn.addChild(child, node)
+						node.wasCreated()
+					}
 				}
-			}
-		case methodGet:
-			tn.mu.Lock()
-			oldState := tn.state
-			oldStat := tn.stat
-			tn.data = result.data
-			tn.stat = result.stat
-			tn.state = TreeNodeLive
-			tn.mu.Unlock()
-			if oldState == TreeNodeLive {
-				if oldStat == nil || oldStat.Mzxid != result.stat.Mzxid {
+			case methodGet:
+				tn.mu.Lock()
+				oldState := tn.state
+				oldStat := tn.stat
+				tn.data = result.data
+				tn.stat = result.stat
+				tn.state = TreeNodeLive
+				tn.mu.Unlock()
+				if oldState == TreeNodeLive {
+					if oldStat == nil || oldStat.Mzxid != result.stat.Mzxid {
+						tn.tree.publishEvent(&TreeEvent{
+							Type: NodeUpdate,
+							Data: tn.makeData(),
+						})
+					}
+				} else {
 					tn.tree.publishEvent(&TreeEvent{
-						Type: NodeUpdate,
+						Type: NodeAdd,
 						Data: tn.makeData(),
 					})
 				}
-			} else {
-				tn.tree.publishEvent(&TreeEvent{
-					Type: NodeAdd,
-					Data: tn.makeData(),
-				})
+			default:
+				// TODO unhandled method
 			}
-		default:
-			// TODO unhandled method
 		}
 		atomic.AddInt32(&tn.tree.outstandingOps, -1)
 		if atomic.LoadInt32(&tn.tree.outstandingOps) == 0 && !tn.tree.isInitialized() {
@@ -246,7 +254,7 @@ func (tn *TreeNode) getChild(path string) *TreeNode {
 func (tn *TreeNode) getChildren() (children []string) {
 	tn.mu.RLock()
 	defer tn.mu.RUnlock()
-	for child, _ := range tn.children {
+	for child := range tn.children {
 		children = append(children, child)
 	}
 	return children
@@ -283,6 +291,14 @@ func (tn *TreeNode) makeData() ChildData {
 	}
 }
 
+// Data return the data of node.
+func (tn *TreeNode) Data() []byte {
+	tn.mu.RLock()
+	defer tn.mu.RUnlock()
+
+	return tn.data
+}
+
 type methodType int
 
 const (
@@ -302,11 +318,13 @@ type nodeResult struct {
 	err        error
 }
 
+// TreeEvent event for Listener.
 type TreeEvent struct {
 	Data ChildData
 	Type TreeEventType
 }
 
+// ChildData the tree event data.
 type ChildData struct {
 	Path string
 	Stat *zk.Stat
