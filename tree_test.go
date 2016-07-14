@@ -24,13 +24,26 @@ func TestTreeCache(t *testing.T) {
 	testServer, evt, conn := getConnFromTestCluster(t)
 	defer testServer.Stop()
 	defer conn.Close()
+	for {
+		e := <-evt
+		if e.State == zk.StateConnected {
+			break
+		}
+	}
 
-	tc := NewTreeCache(conn, evt, "/")
+	prefix := "/test"
+
+	tc := NewTreeCache(conn, evt, prefix)
 	che := make(chan *TreeEvent, 100)
 	tc.Listen(ListenFunc(func(event *TreeEvent) {
 		che <- event
 	}))
-	tc.Start()
+	err := tc.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
 	for event := range che {
 		if event.Type == Initialized {
 			break
@@ -44,45 +57,45 @@ func TestTreeCache(t *testing.T) {
 		Sleep time.Duration
 	}{
 		{
-			Path: "/hehe",
+			Path: prefix + "/hehe",
 			Data: "00_data",
 			Type: NodeAdd,
 		},
 		{
-			Path: "/maybe",
+			Path: prefix + "/maybe",
 			Data: "01_data",
 			Type: NodeAdd,
 		},
 		{
-			Path:  "/maybe",
+			Path:  prefix + "/maybe",
 			Data:  "01_data_1",
 			Type:  NodeUpdate,
 			Sleep: time.Millisecond * 50,
 		},
 		{
-			Path:  "/maybe",
+			Path:  prefix + "/maybe",
 			Data:  "01_data_2",
 			Type:  NodeUpdate,
 			Sleep: time.Millisecond * 50,
 		},
 		{
-			Path: "/hehe/haha",
+			Path: prefix + "/hehe/haha",
 			Data: "02_data",
 			Type: NodeAdd,
 		},
 		{
-			Path: "/hehe/hehe",
+			Path: prefix + "/hehe/hehe",
 			Data: "03_data",
 			Type: NodeAdd,
 		},
 		{
-			Path:  "/hehe/hehe",
+			Path:  prefix + "/hehe/hehe",
 			Data:  "03_data_01",
 			Type:  NodeUpdate,
 			Sleep: time.Millisecond * 50,
 		},
 		{
-			Path:  "/hehe/hehe",
+			Path:  prefix + "/hehe/hehe",
 			Data:  "",
 			Type:  NodeRemoved,
 			Sleep: time.Millisecond * 50,

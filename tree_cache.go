@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	pathutil "path"
+
 	"github.com/samuel/go-zookeeper/zk"
 )
 
@@ -48,7 +50,7 @@ func NewTreeCache(conn *zk.Conn, evt <-chan zk.Event, path string) *TreeCache {
 		client:      conn,
 	}
 
-	tc.root = NewTreeNode(tc, nil, path, 0)
+	tc.root = NewTreeNode(tc, nil, pathutil.Clean(path), 0)
 	tc.initialized.Store(false)
 	return tc
 }
@@ -57,27 +59,30 @@ func NewTreeCache(conn *zk.Conn, evt <-chan zk.Event, path string) *TreeCache {
 // The cache is not started automatically. You must call this method.
 // After a cache started, all changes of subtree will be synchronized
 // from the ZooKeeper server. Events will be fired for those activity.
-func (tc *TreeCache) Start() {
-	if tc.client.State() != zk.StateConnected {
-		for {
-			e := <-tc.evt
-			if e.State == zk.StateConnected {
-				break
-			}
-		}
-	}
-
+func (tc *TreeCache) Start() error {
 	tc.mu.Lock()
 	if tc.state != CacheLatent {
 		tc.mu.Unlock()
-		panic(ErrAlreadStarted)
+		return ErrAlreadStarted
 	}
 	tc.state = CacheLatent
 	tc.mu.Unlock()
 
-	if tc.client.State() == zk.StateConnected {
+	state := tc.client.State()
+	if state == zk.StateConnected || state == zk.StateHasSession {
+		have, _, err := tc.client.Exists(tc.root.path)
+		if err != nil {
+			return err
+		}
+		if !have {
+			_, err := tc.client.Create(tc.root.path, []byte{}, 0, zk.WorldACL(zk.PermAll))
+			if err != nil {
+				return err
+			}
+		}
 		tc.root.wasCreated()
 	}
+	return nil
 }
 
 // Close close the cache.
@@ -102,24 +107,32 @@ func (tc *TreeCache) Listen(ls Listener) {
 
 // GetData gets data of a node from cache.
 func (tc *TreeCache) GetData(path string) []byte {
-	node := tc.findNode(strings.Split(path, "/"))
+	node := tc.findNode(path)
 	if node == nil {
 		return nil
 	}
-	return node.data
+	return node.Data()
 }
 
 func (tc *TreeCache) GetChildren(path string) []string {
-	node := tc.findNode(strings.Split(path, "/"))
+	node := tc.findNode(path)
+	if node == nil {
+		return nil
+	}
 	return node.getChildren()
 }
 
-func (tc *TreeCache) findNode(paths []string) *TreeNode {
+func (tc *TreeCache) findNode(path string) *TreeNode {
+	path = pathutil.Clean(path)
+	if !strings.HasPrefix(path, tc.root.path) {
+		return nil
+	}
+	paths := strings.Split(strings.TrimPrefix(path, tc.root.path), "/")
 	current := tc.root
 	for _, p := range paths[1:] {
 		current = current.getChild(p)
 		if current == nil {
-			return current
+			return nil
 		}
 	}
 	return current

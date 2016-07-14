@@ -190,42 +190,42 @@ func (tn *TreeNode) processResult() {
 		result := <-tn.result
 		if result.err != nil {
 			// TODO handle error or log it.
-			continue
-		}
-		switch result.methodType {
-		case methodExists:
-		case methodGetChildren:
-			for _, child := range result.children {
-				if !tn.haveChild(child) {
-					fullPath := path.Join(tn.path, child)
-					node := NewTreeNode(tn.tree, tn, fullPath, tn.depth+1)
-					tn.addChild(child, node)
-					node.wasCreated()
+		} else {
+			switch result.methodType {
+			case methodExists:
+			case methodGetChildren:
+				for _, child := range result.children {
+					if !tn.haveChild(child) {
+						fullPath := path.Join(tn.path, child)
+						node := NewTreeNode(tn.tree, tn, fullPath, tn.depth+1)
+						tn.addChild(child, node)
+						node.wasCreated()
+					}
 				}
-			}
-		case methodGet:
-			tn.mu.Lock()
-			oldState := tn.state
-			oldStat := tn.stat
-			tn.data = result.data
-			tn.stat = result.stat
-			tn.state = TreeNodeLive
-			tn.mu.Unlock()
-			if oldState == TreeNodeLive {
-				if oldStat == nil || oldStat.Mzxid != result.stat.Mzxid {
+			case methodGet:
+				tn.mu.Lock()
+				oldState := tn.state
+				oldStat := tn.stat
+				tn.data = result.data
+				tn.stat = result.stat
+				tn.state = TreeNodeLive
+				tn.mu.Unlock()
+				if oldState == TreeNodeLive {
+					if oldStat == nil || oldStat.Mzxid != result.stat.Mzxid {
+						tn.tree.publishEvent(&TreeEvent{
+							Type: NodeUpdate,
+							Data: tn.makeData(),
+						})
+					}
+				} else {
 					tn.tree.publishEvent(&TreeEvent{
-						Type: NodeUpdate,
+						Type: NodeAdd,
 						Data: tn.makeData(),
 					})
 				}
-			} else {
-				tn.tree.publishEvent(&TreeEvent{
-					Type: NodeAdd,
-					Data: tn.makeData(),
-				})
+			default:
+				// TODO unhandled method
 			}
-		default:
-			// TODO unhandled method
 		}
 		atomic.AddInt32(&tn.tree.outstandingOps, -1)
 		if atomic.LoadInt32(&tn.tree.outstandingOps) == 0 && !tn.tree.isInitialized() {
@@ -281,6 +281,13 @@ func (tn *TreeNode) makeData() ChildData {
 		Data: tn.data,
 		Path: tn.path,
 	}
+}
+
+func (tn *TreeNode) Data() []byte {
+	tn.mu.RLock()
+	defer tn.mu.RUnlock()
+
+	return tn.data
 }
 
 type methodType int
