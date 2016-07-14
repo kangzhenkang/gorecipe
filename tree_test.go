@@ -1,12 +1,25 @@
 package recipe
 
 import (
+	"fmt"
+	"log"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
 )
+
+type cases struct {
+	Path  string
+	Data  string
+	Type  TreeEventType
+	Sleep time.Duration
+}
+
+func errorEvent(path string) *TreeEvent {
+	return &TreeEvent{Type: -1, Data: ChildData{Path: path}}
+}
 
 func getConnFromTestCluster(t *testing.T) (*zk.TestCluster, <-chan zk.Event, *zk.Conn) {
 	ts, err := zk.StartTestCluster(1, nil, nil)
@@ -50,12 +63,7 @@ func TestTreeCache(t *testing.T) {
 		}
 	}
 
-	testCases := []struct {
-		Path  string
-		Data  string
-		Type  TreeEventType
-		Sleep time.Duration
-	}{
+	testCases := []cases{
 		{
 			Path: prefix + "/hehe",
 			Data: "00_data",
@@ -101,6 +109,12 @@ func TestTreeCache(t *testing.T) {
 			Sleep: time.Millisecond * 50,
 		},
 	}
+
+	casesMap := map[string]cases{}
+	for _, v := range testCases {
+		casesMap[fmt.Sprintf("%v%v%v", v.Path, v.Type, v.Data)] = v
+	}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
@@ -113,58 +127,65 @@ func TestTreeCache(t *testing.T) {
 				_, err := conn.Create(v.Path, []byte(v.Data), 0, zk.WorldACL(zk.PermAll))
 				if err != nil {
 					t.Error(err)
-					che <- nil
+					che <- errorEvent(v.Path)
 				}
 			} else if v.Type == NodeUpdate {
 				_, stat, err := conn.Get(v.Path)
 				if err != nil {
 					t.Error(err)
-					che <- nil
+					che <- errorEvent(v.Path)
 					continue
 				}
 				_, err = conn.Set(v.Path, []byte(v.Data), stat.Version)
 				if err != nil {
 					t.Error(err)
-					che <- nil
+					che <- errorEvent(v.Path)
 				}
 			} else if v.Type == NodeRemoved {
 				_, stat, err := conn.Get(v.Path)
 				if err != nil {
 					t.Error(err)
-					che <- nil
+					che <- errorEvent(v.Path)
 					continue
 				}
 				err = conn.Delete(v.Path, stat.Version)
 				if err != nil {
 					t.Error(err)
-					che <- nil
+					che <- errorEvent(v.Path)
 				}
 			}
 		}
+		close(che)
+		log.Println("Finish Send.")
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for _, v := range testCases {
-			var event *TreeEvent
-			for event = range che {
-				if event == nil || (event.Type != Initialized && event.Data.Path == v.Path) {
-					break
-				}
-			}
-			if event == nil {
+
+		var event *TreeEvent
+		for event = range che {
+			log.Println("Recived:", event)
+			key := fmt.Sprintf("%v%v%v", event.Data.Path, event.Type, string(event.Data.Data))
+			v, _ := casesMap[key]
+			delete(casesMap, key)
+			if event.Type == -1 {
 				continue
 			}
 			if event.Data.Path != v.Path {
 				t.Errorf("path whant=%s, got=%s", v.Path, event.Data.Path)
 			}
 			if string(event.Data.Data) != v.Data {
-				t.Errorf("path whant=%s, got=%s", v.Data, string(event.Data.Data))
+				t.Errorf("data whant=%s, got=%s", v.Data, string(event.Data.Data))
 			}
 		}
+		if len(casesMap) > 0 {
+			t.Error("CasesMaps not empty:", casesMap)
+		}
+		log.Println("Finish Recive.")
 	}()
 	wg.Wait()
 
+	log.Println("Start Get.")
 	last := map[string]string{}
 	for _, v := range testCases {
 		if v.Type == NodeAdd || v.Type == NodeUpdate {
@@ -174,13 +195,14 @@ func TestTreeCache(t *testing.T) {
 		}
 	}
 	for path, data := range last {
-		getData, _, err := conn.Get(path)
-		if err != nil {
-			t.Error(err)
+		getData := tc.GetData(path)
+		if getData == nil {
+			t.Error("Get Data Error:", path)
 			continue
 		}
 		if data != string(getData) {
 			t.Errorf("get data error: want=%s got=%s", data, string(getData))
 		}
 	}
+	log.Println("Finish Get.")
 }
