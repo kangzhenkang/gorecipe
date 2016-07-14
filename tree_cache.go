@@ -11,20 +11,26 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 )
 
+// CacheState state for TreeCache.
 type CacheState int32
 
 const (
+	// CacheLatent the state when tree cache just created.
 	CacheLatent CacheState = iota
+	// CacheStarted the state when tree cache started.
 	CacheStarted
+	// CacheClosed the state when tree cache closed.
 	CacheClosed
 )
 
 var (
+	// ErrAlreadStarted tree cache alread started.
 	ErrAlreadStarted = errors.New("Alread started")
 )
 
 // Listener for TreeCache changed.
 type Listener interface {
+	// Event execute when an event pushed.
 	Event(*TreeEvent)
 }
 
@@ -40,7 +46,7 @@ type TreeCache struct {
 	evt            <-chan zk.Event
 }
 
-// NewTreeeCache create a new TreeCache.
+// NewTreeCache create a new TreeCache.
 func NewTreeCache(conn *zk.Conn, evt <-chan zk.Event, path string) *TreeCache {
 	tc := &TreeCache{
 		state:       CacheLatent,
@@ -95,7 +101,7 @@ func (tc *TreeCache) Close() {
 	}
 }
 
-// Listener Registers a function to listen the cache events.
+// Listen registers a function to listen the cache events.
 // The cache events are changes of local data. They are delivered from
 // watching notifications in ZooKeeper session.
 // This method can be use as a decorator.
@@ -114,6 +120,7 @@ func (tc *TreeCache) GetData(path string) []byte {
 	return node.Data()
 }
 
+// GetChildren get the children of zookeeper path.
 func (tc *TreeCache) GetChildren(path string) []string {
 	node := tc.findNode(path)
 	if node == nil {
@@ -159,8 +166,10 @@ func (tc *TreeCache) sessionWatch() {
 	// TODO Watch connection.
 }
 
+// ListenFunc make a function to be a Listener.
 type ListenFunc func(*TreeEvent)
 
+// Event execute when an event pushed.
 func (lf ListenFunc) Event(event *TreeEvent) {
 	lf(event)
 }
