@@ -1,1 +1,1 @@
-test: make test
+test: go get -t -v ./... && make test
