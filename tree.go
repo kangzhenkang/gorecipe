@@ -119,7 +119,7 @@ func (tn *TreeNode) wasDeleted() {
 	if oldState == TreeNodeLive {
 		tn.tree.publishEvent(&TreeEvent{
 			Type: NodeRemoved,
-			Data: ChildData{
+			Data: &ChildData{
 				Path: tn.path,
 			},
 		})
@@ -281,10 +281,10 @@ func (tn *TreeNode) haveChild(child string) bool {
 	return ok
 }
 
-func (tn *TreeNode) makeData() ChildData {
+func (tn *TreeNode) makeData() *ChildData {
 	tn.mu.RLock()
 	defer tn.mu.RUnlock()
-	return ChildData{
+	return &ChildData{
 		Stat: tn.stat,
 		Data: tn.data,
 		Path: tn.path,
@@ -320,7 +320,7 @@ type nodeResult struct {
 
 // TreeEvent event for Listener.
 type TreeEvent struct {
-	Data ChildData
+	Data *ChildData
 	Type TreeEventType
 }
 

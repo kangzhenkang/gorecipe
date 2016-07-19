@@ -18,7 +18,7 @@ type cases struct {
 }
 
 func errorEvent(path string) *TreeEvent {
-	return &TreeEvent{Type: -1, Data: ChildData{Path: path}}
+	return &TreeEvent{Type: -1, Data: &ChildData{Path: path}}
 }
 
 func getConnFromTestCluster(t *testing.T) (*zk.TestCluster, <-chan zk.Event, *zk.Conn) {
