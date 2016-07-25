@@ -1,4 +1,10 @@
-# gorecipe
+# gorecipe ![GoCI](http://goci.ele.me/na/goci/eleme/mux/badge?type=job)
+-------
+![GoLint](http://goci.ele.me/na/goci/eleme/mux/badge?type=lint)
+![GoFmt](http://goci.ele.me/na/goci/eleme/mux/badge?type=fmt)
+![GoVet](http://goci.ele.me/na/goci/eleme/mux/badge?type=vet)
+![GoTest](http://goci.ele.me/na/goci/eleme/mux/badge?type=test)
+
 
 zookeeper tree cache
 
