@@ -104,7 +104,7 @@ func TestTreeCache(t *testing.T) {
 		},
 		{
 			Path:  prefix + "/hehe/hehe",
-			Data:  "",
+			Data:  "03_data_01",
 			Type:  NodeRemoved,
 			Sleep: time.Millisecond * 50,
 		},
@@ -114,7 +114,6 @@ func TestTreeCache(t *testing.T) {
 	for _, v := range testCases {
 		casesMap[fmt.Sprintf("%v%v%v", v.Path, v.Type, v.Data)] = v
 	}
-
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
@@ -155,7 +154,6 @@ func TestTreeCache(t *testing.T) {
 				}
 			}
 		}
-		close(che)
 		log.Println("Finish Send.")
 	}()
 	wg.Add(1)
@@ -163,19 +161,28 @@ func TestTreeCache(t *testing.T) {
 		defer wg.Done()
 
 		var event *TreeEvent
-		for event = range che {
-			log.Println("Recived:", event)
-			key := fmt.Sprintf("%v%v%v", event.Data.Path, event.Type, string(event.Data.Data))
-			v, _ := casesMap[key]
-			delete(casesMap, key)
-			if event.Type == -1 {
-				continue
-			}
-			if event.Data.Path != v.Path {
-				t.Errorf("path whant=%s, got=%s", v.Path, event.Data.Path)
-			}
-			if string(event.Data.Data) != v.Data {
-				t.Errorf("data whant=%s, got=%s", v.Data, string(event.Data.Data))
+	outer:
+		for {
+			select {
+			case event = <-che:
+				key := fmt.Sprintf("%v%v%v", event.Data.Path, event.Type, string(event.Data.Data))
+				v, _ := casesMap[key]
+				delete(casesMap, key)
+				if len(casesMap) == 0 {
+					break outer
+				}
+				if event.Data == nil {
+					continue
+				}
+				log.Println("Recived:", event.Type, event.Data.Path, event.Data.Stat)
+				if event.Data.Path != v.Path {
+					t.Errorf("path whant=%s, got=%s", v.Path, event.Data.Path)
+				}
+				if string(event.Data.Data) != v.Data {
+					t.Errorf("data whant=%s, got=%s", v.Data, string(event.Data.Data))
+				}
+			case <-time.After(time.Millisecond * 500):
+				break outer
 			}
 		}
 		if len(casesMap) > 0 {
