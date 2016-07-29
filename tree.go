@@ -121,6 +121,7 @@ func (tn *TreeNode) wasDeleted() {
 			Type: NodeRemoved,
 			Data: &ChildData{
 				Path: tn.path,
+				Data: tn.data,
 			},
 		})
 	}
