@@ -86,6 +86,7 @@ type TreeNode struct {
 // NewTreeNode reutrn the a TreeNode.
 func NewTreeNode(tree *TreeCache, parent *TreeNode, path string, depth int) *TreeNode {
 	tn := &TreeNode{
+		parent:   parent,
 		tree:     tree,
 		path:     path,
 		depth:    depth,
@@ -187,7 +188,9 @@ func (tn *TreeNode) processWatch() {
 		case zk.EventNodeChildrenChanged:
 			tn.refreshChildren()
 		case zk.EventNodeDeleted:
+			tn.result <- &nodeResult{methodType: methodWasDeleted}
 			tn.wasDeleted()
+			return
 		case zk.EventNotWatching:
 			// TODO zk closed closed
 		}
@@ -232,6 +235,8 @@ func (tn *TreeNode) processResult() {
 						Data: tn.makeData(),
 					})
 				}
+			case methodWasDeleted:
+				return
 			default:
 				// TODO unhandled method
 			}
@@ -264,7 +269,6 @@ func (tn *TreeNode) getChildren() (children []string) {
 func (tn *TreeNode) deleteChild(child string) {
 	tn.mu.Lock()
 	defer tn.mu.Unlock()
-
 	delete(tn.children, child)
 }
 
@@ -307,6 +311,7 @@ const (
 	methodGet
 	methodGetChildren
 	methodExists
+	methodWasDeleted
 )
 
 type nodeResult struct {

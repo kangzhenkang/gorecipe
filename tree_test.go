@@ -108,6 +108,11 @@ func TestTreeCache(t *testing.T) {
 			Type:  NodeRemoved,
 			Sleep: time.Millisecond * 50,
 		},
+		{
+			Path: prefix + "/hehe/hehe",
+			Data: "04_data",
+			Type: NodeAdd,
+		},
 	}
 
 	casesMap := map[string]cases{}
