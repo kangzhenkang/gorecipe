@@ -44,12 +44,12 @@ const (
 var (
 	treeEventTypeString = map[TreeEventType]string{
 		Unknow:                "Unknow",
-		NodeAdd:               "NodeAdd",
-		NodeUpdate:            "NodeUpdate",
+		NodeAdd:               "NodeAdded",
+		NodeUpdate:            "NodeUpdated",
 		NodeRemoved:           "NodeRemoved",
-		ConnectionSuspended:   "ConnectionSuspended",
-		ConnectionReconnected: "ConnectionReconnected",
-		ConnectionLost:        "ConnectionLost",
+		ConnectionSuspended:   "ConnSuspended",
+		ConnectionReconnected: "ConnReconnected",
+		ConnectionLost:        "ConnLost",
 		Initialized:           "Initialized",
 	}
 	treeNodeStateString = map[TreeNodeState]string{
