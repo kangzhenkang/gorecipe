@@ -1,6 +1,7 @@
 package recipe
 
 import (
+	"context"
 	"path"
 	"strings"
 	"sync"
@@ -81,6 +82,8 @@ type TreeNode struct {
 	result   chan *nodeResult
 	events   chan zk.Event
 	mu       *sync.RWMutex
+	cancel   context.CancelFunc
+	ctx      context.Context
 }
 
 // NewTreeNode reutrn the a TreeNode.
@@ -95,6 +98,7 @@ func NewTreeNode(tree *TreeCache, parent *TreeNode, path string, depth int) *Tre
 		mu:       &sync.RWMutex{},
 		children: make(map[string]*TreeNode),
 	}
+	tn.ctx, tn.cancel = context.WithCancel(context.Background())
 	go tn.processResult()
 	go tn.processWatch()
 	return tn
@@ -118,6 +122,7 @@ func (tn *TreeNode) wasDeleted() {
 	oldState := tn.state
 	tn.state = TreeNodeDead
 	if oldState == TreeNodeLive {
+		tn.cancel()
 		tn.tree.publishEvent(&TreeEvent{
 			Type: NodeRemoved,
 			Data: &ChildData{
@@ -149,8 +154,11 @@ func (tn *TreeNode) refreshData() {
 		result := &nodeResult{methodType: methodGet}
 		result.data, result.stat, evt, result.err = tn.tree.client.GetW(tn.path)
 		tn.result <- result
-		e := <-evt
-		tn.events <- e
+		select {
+		case e := <-evt:
+			tn.events <- e
+		case <-tn.ctx.Done():
+		}
 	}()
 }
 
@@ -158,24 +166,34 @@ func (tn *TreeNode) refreshChildren() {
 	atomic.AddInt32(&tn.tree.outstandingOps, 1)
 	go func() {
 		var evt <-chan zk.Event
+	outer:
 		for {
 			result := &nodeResult{methodType: methodGetChildren}
 			result.children, result.stat, evt, result.err = tn.tree.client.ChildrenW(tn.path)
 			tn.result <- result
-			e := <-evt
-			// ChildrenW can recived EventNodeDataChanged event, so ignore it.
-			if e.Type == zk.EventNodeDataChanged {
-				continue
+			select {
+			case <-tn.ctx.Done():
+				return
+			case e := <-evt:
+				// ChildrenW can recived EventNodeDataChanged event, so ignore it.
+				if e.Type == zk.EventNodeDataChanged {
+					continue outer
+				}
+				tn.events <- e
+				return
 			}
-			tn.events <- e
-			break
 		}
 	}()
 }
 
 func (tn *TreeNode) processWatch() {
+	var event zk.Event
 	for {
-		event := <-tn.events
+		select {
+		case event = <-tn.events:
+		case <-tn.ctx.Done():
+			return
+		}
 		switch event.Type {
 		case zk.EventNodeCreated:
 			if tn.parent == nil {
@@ -198,8 +216,13 @@ func (tn *TreeNode) processWatch() {
 }
 
 func (tn *TreeNode) processResult() {
+	var result *nodeResult
 	for {
-		result := <-tn.result
+		select {
+		case result = <-tn.result:
+		case <-tn.ctx.Done():
+			return
+		}
 		if result.err != nil {
 			// TODO handle error or log it.
 		} else {
