@@ -153,6 +153,11 @@ func (tn *TreeNode) refreshData() {
 		var evt <-chan zk.Event
 		result := &nodeResult{methodType: methodGet}
 		result.data, result.stat, evt, result.err = tn.tree.client.GetW(tn.path)
+		// node already been deleted
+		if result.err == zk.ErrNoNode {
+			tn.events <- zk.Event{Type: zk.EventNodeDeleted}
+			return
+		}
 		tn.result <- result
 		select {
 		case e := <-evt:
@@ -170,6 +175,11 @@ func (tn *TreeNode) refreshChildren() {
 		for {
 			result := &nodeResult{methodType: methodGetChildren}
 			result.children, result.stat, evt, result.err = tn.tree.client.ChildrenW(tn.path)
+			// node already been deleted
+			if result.err == zk.ErrNoNode {
+				tn.events <- zk.Event{Type: zk.EventNodeDeleted}
+				return
+			}
 			tn.result <- result
 			select {
 			case <-tn.ctx.Done():
@@ -207,7 +217,8 @@ func (tn *TreeNode) processWatch() {
 			tn.refreshChildren()
 		case zk.EventNodeDeleted:
 			tn.result <- &nodeResult{methodType: methodWasDeleted}
-			tn.wasDeleted()
+			// wasDeleted can't be call in here because
+			// the add event could had not been send
 			return
 		case zk.EventNotWatching:
 			// TODO zk closed closed
@@ -259,6 +270,7 @@ func (tn *TreeNode) processResult() {
 					})
 				}
 			case methodWasDeleted:
+				tn.wasDeleted()
 				return
 			default:
 				// TODO unhandled method
