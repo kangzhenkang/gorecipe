@@ -109,11 +109,19 @@ func (tn *TreeNode) wasCreated() {
 }
 
 func (tn *TreeNode) wasDeleted() {
+	children := []*TreeNode{}
 	tn.mu.Lock()
-	defer tn.mu.Unlock()
 	for _, child := range tn.children {
+		children = append(children, child)
+	}
+	tn.mu.Unlock()
+
+	for _, child := range children {
 		child.wasDeleted()
 	}
+
+	tn.mu.Lock()
+	defer tn.mu.Unlock()
 
 	if tn.tree.state == CacheClosed {
 		return
@@ -304,6 +312,7 @@ func (tn *TreeNode) getChildren() (children []string) {
 func (tn *TreeNode) deleteChild(child string) {
 	tn.mu.Lock()
 	defer tn.mu.Unlock()
+
 	delete(tn.children, child)
 }
 
